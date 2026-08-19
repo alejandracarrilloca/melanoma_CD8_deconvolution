@@ -41,7 +41,6 @@ data_output_directory <- file.path(
   "skcm_uvm_immune_scores"
 )
 results_directory <- file.path("results", "08")
-figure_directory <- file.path(results_directory, "figures")
 cancers <- c("SKCM", "UVM")
 
 invisible(lapply(

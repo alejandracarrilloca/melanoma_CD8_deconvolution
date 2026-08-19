@@ -310,4 +310,4 @@ print(consistency)
 
 writeLines(
   capture.output(sessionInfo()),
-  file.path(results_dir, "04_sessionInfo.txt")
+  file.path(results_dir, "04_sessionInfo.txt"))

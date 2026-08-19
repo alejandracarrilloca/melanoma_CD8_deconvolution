@@ -53,6 +53,13 @@ options(repos = c(CRAN = cran_repository))
 project_root <- normalizePath(getwd(), mustWork = TRUE)
 results_directory <- file.path(project_root, "results", "00")
 bootstrap_library <- file.path(project_root, ".renv-bootstrap-library")
+project_cache <- file.path(project_root, ".renv-cache")
+
+# The default renv cache is placed under the user's home directory. Large
+# Bioconductor experiment packages exceeded the writable home-cache capacity
+# on this HPC and curl stopped with error code 23. Keep the cache beside the
+# project on /export/space3 instead.
+Sys.setenv(RENV_PATHS_CACHE = project_cache)
 
 invisible(lapply(
   c(
@@ -60,7 +67,8 @@ invisible(lapply(
     file.path(project_root, "data"),
     file.path(project_root, "results"),
     results_directory,
-    bootstrap_library
+    bootstrap_library,
+    project_cache
   ),
   dir.create,
   recursive = TRUE,
@@ -74,16 +82,21 @@ invisible(lapply(
 # Keep the temporary bootstrap library out of version control. renv will create
 # and manage its final project library separately under renv/library/.
 gitignore_file <- file.path(project_root, ".gitignore")
-gitignore_entry <- ".renv-bootstrap-library/"
+gitignore_entries <- c(
+  ".renv-bootstrap-library/",
+  ".renv-cache/"
+)
 gitignore_lines <- if (file.exists(gitignore_file)) {
   readLines(gitignore_file, warn = FALSE)
 } else {
   character()
 }
 
-if (!gitignore_entry %in% gitignore_lines) {
+missing_gitignore_entries <- setdiff(gitignore_entries, gitignore_lines)
+
+if (length(missing_gitignore_entries) > 0L) {
   writeLines(
-    c(gitignore_lines, gitignore_entry),
+    c(gitignore_lines, missing_gitignore_entries),
     gitignore_file
   )
 }
@@ -99,13 +112,11 @@ if (getRversion() < "4.3.0") {
   )
 }
 
-# Keep parallel compilation conservative on a shared server. When running
-# under SLURM, honor the allocated CPU count but never use more than four cores.
-slurm_cores <- suppressWarnings(as.integer(Sys.getenv("SLURM_CPUS_PER_TASK")))
-if (is.na(slurm_cores) || slurm_cores < 1L) {
-  slurm_cores <- 2L
-}
-options(Ncpus = min(slurm_cores, 4L))
+# Install sequentially. Parallel renv installation on this shared filesystem
+# caused packages to collide in renv/staging/1, producing truncated archives,
+# disappearing working directories and dependencies that could not see Rcpp.
+options(Ncpus = 1L)
+Sys.setenv(MAKEFLAGS = "-j1")
 
 # ------------------------------------------------------------------------------
 # Direct project dependencies
@@ -159,8 +170,10 @@ bioconductor_packages <- c(
   "org.Hs.eg.db",
   "biomaRt",
 
-  # Single-cell QC, normalization and annotation
-  "scater",
+  # Single-cell QC, normalization and annotation. scater is intentionally not
+  # required: on this HPC it pulls ggrastr -> Cairo/ragg/textshaping, which need
+  # unavailable system development headers. Seurat, scuttle and scran provide
+  # the QC, normalization and visualization functionality used by this project.
   "scran",
   "scuttle",
   "SingleR",
@@ -209,7 +222,7 @@ write.csv(
 )
 
 # ------------------------------------------------------------------------------
-# Bootstrap and activate renv
+# Bootstrap and configure renv
 # ------------------------------------------------------------------------------
 
 if (!requireNamespace("renv", quietly = TRUE)) {
@@ -241,15 +254,14 @@ if (!file.exists(activate_file)) {
     restart = FALSE
   )
 } else {
-  timestamp_message("Activating the existing renv environment")
-  renv::activate(project = project_root)
+  timestamp_message("Using the existing renv project infrastructure")
 }
 
-# renv::activate() writes activation infrastructure for future R sessions, but
-# the current non-interactive Rscript process must also load the project. Make
-# the project library the first writable library and remove the bootstrap
-# directory from subsequent dependency resolution.
-renv::load(project = project_root)
+# Do not call renv::activate() or renv::load() here. When this setup script was
+# launched non-interactively with Rscript --vanilla, activation spent many
+# minutes rescanning the project without reaching installation. The project
+# argument supplied to renv operations is sufficient; explicitly put its
+# library first for requireNamespace() and validation in this process.
 project_library <- renv::paths$library(project = project_root)
 dir.create(project_library, recursive = TRUE, showWarnings = FALSE)
 .libPaths(unique(c(
@@ -257,10 +269,9 @@ dir.create(project_library, recursive = TRUE, showWarnings = FALSE)
   setdiff(.libPaths(), bootstrap_library)
 )))
 
-# Loading an existing project may restore the repository recorded in an older
-# lockfile, so assert the compatible snapshot again for this installation.
-options(repos = c# directory from subsequent dependency resolution.
-(CRAN = cran_repository))
+# Assert the compatible snapshot for this installation instead of inheriting a
+# repository recorded by a partially completed setup attempt.
+options(repos = c(CRAN = cran_repository))
 
 if (normalizePath(.libPaths()[1], mustWork = FALSE) !=
     normalizePath(project_library, mustWork = FALSE)) {
@@ -281,16 +292,9 @@ renv::settings$ppm.enabled(
   project = project_root
 )
 
-# If a lockfile already exists, restore it before checking for newly declared
-# dependencies. This makes reruns deterministic while allowing this manifest to
-# introduce additional packages later.
-if (file.exists(lock_file)) {
-  timestamp_message("Restoring packages recorded in renv.lock")
-  renv::restore(
-    project = project_root,
-    prompt = FALSE
-  )
-}
+# This setup script builds the environment from the manifest below and writes a
+# fresh lockfile only after validation succeeds. To reproduce an already
+# completed environment, run renv::restore() separately as documented above.
 
 # ------------------------------------------------------------------------------
 # Install all declared packages into the project library
@@ -323,14 +327,17 @@ renv::install(
 timestamp_message(
   "Installing or validating ",
   length(bioconductor_specs),
-  " direct Bioconductor dependencies"
+  " direct Bioconductor dependencies sequentially"
 )
 
-renv::install(
-  packages = bioconductor_specs,
-  project = project_root,
-  prompt = FALSE
-)
+for (package_spec in bioconductor_specs) {
+  timestamp_message("Bioconductor dependency: ", package_spec)
+  renv::install(
+    packages = package_spec,
+    project = project_root,
+    prompt = FALSE
+  )
+}
 
 # ------------------------------------------------------------------------------
 # Validate the completed environment
@@ -406,6 +413,7 @@ environment_summary <- c(
   paste0("CRAN snapshot: ", cran_snapshot_date),
   paste0("CRAN repository: ", cran_repository),
   paste0("Bootstrap library: ", bootstrap_library),
+  paste0("Project renv cache: ", project_cache),
   paste0("Project library: ", renv::paths$library(project = project_root)),
   paste0("Direct CRAN packages: ", length(cran_packages)),
   paste0("Direct Bioconductor packages: ", length(bioconductor_packages)),

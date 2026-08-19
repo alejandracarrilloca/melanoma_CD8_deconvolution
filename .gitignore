@@ -3,4 +3,4 @@ renv/
 data/
 results/
 docs/
-nohup.out
+.renv-cache/

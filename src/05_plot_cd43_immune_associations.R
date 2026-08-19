@@ -20,21 +20,22 @@
 #               zero, and rose for positive associations. Black asterisks mark
 #               associations with within-cancer BH-FDR <= 0.05.
 #
-# Inputs:       1. data/statistical_results/all_cancers_SPN_correlations.csv
+# Inputs:       1. results/04/04_all_cancers_SPN_correlations.csv
 #                  Continuous SPN-expression/LM22 Spearman results from Script 04.
-#               2. data/statistical_results/all_cancers_CD43_high_vs_low.csv
+#               2. results/04/04_all_cancers_CD43_high_vs_low.csv
 #                  Quartile-group Wilcoxon and rank-biserial results from Script 04.
 #               3. data/analysis_ready/all_cancers_analysis_ready.tsv.gz
 #                  Sample-level CD43 groups and CIBERSORTx LM22 fractions from
 #                  Script 03.
 #
-# Outputs:      figures/cd43_immune_associations/
-#               1. 05A_cross_cancer_spearman_heatmap.png
-#               2. 05B_cross_cancer_rank_biserial_heatmap.png
-#               3. per_cancer/05C_<CANCER>_CD43_butterfly_profile.png
+# Outputs:      results/05/
+#               1. figures/05A_cross_cancer_spearman_heatmap.png
+#               2. figures/05B_cross_cancer_rank_biserial_heatmap.png
+#               3. figures/per_cancer/05C_<CANCER>_CD43_butterfly_profile.png
 #                  One figure for each of the ten cancer cohorts.
 #               4. 05_composition_summary.csv
 #               5. 05_figure_manifest.csv
+#               6. 05_sessionInfo.txt
 #
 # Analysis set: Primary results including all successfully deconvolved samples.
 #
@@ -75,21 +76,27 @@ suppressPackageStartupMessages({
 # File locations and plotting constants
 # ==============================================================================
 
-results_dir <- file.path(getwd(), "data", "statistical_results")
+script04_results_dir <- file.path(getwd(), "results", "04")
+results_dir <- file.path(getwd(), "results", "05")
 analysis_file <- file.path(
   getwd(), "data", "analysis_ready", "all_cancers_analysis_ready.tsv.gz"
 )
 continuous_file <- file.path(
-  results_dir, "all_cancers_SPN_correlations.csv"
+  script04_results_dir, "04_all_cancers_SPN_correlations.csv"
 )
 categorical_file <- file.path(
-  results_dir, "all_cancers_CD43_high_vs_low.csv"
+  script04_results_dir, "04_all_cancers_CD43_high_vs_low.csv"
 )
 figure_dir <- file.path(
-  getwd(), "figures", "cd43_immune_associations"
+  results_dir, "figures"
 )
 
-dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
+invisible(lapply(
+  c(results_dir, figure_dir),
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
 
 required_files <- c(continuous_file, categorical_file, analysis_file)
 missing_files <- required_files[!file.exists(required_files)]
@@ -462,7 +469,7 @@ if (any(abs(composition_summary$group_total - 1) > 0.01)) {
   )
 }
 
-composition_file <- file.path(figure_dir, "05_composition_summary.csv")
+composition_file <- file.path(results_dir, "05_composition_summary.csv")
 fwrite(composition_summary, composition_file)
 
 # Put the two group means on the same row so their absolute abundance can be
@@ -673,12 +680,12 @@ for (cancer_name in butterfly_cancers) {
 # Save manifest and report completion
 # ==============================================================================
 
-manifest_file <- file.path(figure_dir, "05_figure_manifest.csv")
+manifest_file <- file.path(results_dir, "05_figure_manifest.csv")
 fwrite(manifest, manifest_file)
 
 message("All CD43 immune-association figures were generated successfully.")
 print(manifest)
 writeLines(
   capture.output(sessionInfo()),
-  file.path(figure_dir, "05_sessionInfo.txt")
+  file.path(results_dir, "05_sessionInfo.txt")
 )
