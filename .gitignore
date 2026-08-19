@@ -1,0 +1,6 @@
+.renv-bootstrap-library/
+renv/
+data/
+results/
+docs/
+nohup.out
