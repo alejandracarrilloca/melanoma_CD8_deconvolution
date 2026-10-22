@@ -17,14 +17,15 @@ options(stringsAsFactors = FALSE)
 
 required_packages <- c(
   "data.table", "ggplot2", "SingleCellExperiment",
-  "SummarizedExperiment", "S4Vectors"
-)
-missing_packages <- required_packages[
-  !vapply(required_packages, requireNamespace, logical(1L), quietly = TRUE)
-]
-if (length(missing_packages)) {
-  stop("Missing required packages: ", paste(missing_packages, collapse = ", "))
+  "SummarizedExperiment", "S4Vectors")
+
+missing_packages <- required_packages [!vapply(required_packages, requireNamespace, logical(1L), quietly = TRUE)]
+
+if (length(missing_packages)) 
+{ 
+  stop("Missing required packages: ", paste(missing_packages, collapse = ", ")) 
 }
+
 
 suppressPackageStartupMessages({
   library(data.table)
